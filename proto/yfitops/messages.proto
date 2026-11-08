@@ -1,0 +1,9 @@
+syntax = "proto3";
+package yfitops;
+
+message ChatMessage {
+  string sender = 1;
+  string group  = 2;
+  string body   = 3;
+  int64  sent_at_unix_ms = 4;
+}

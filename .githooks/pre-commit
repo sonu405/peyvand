@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Get staged C/C++ files
+mapfile -d '' files < <(
+    git diff --cached --name-only --diff-filter=ACMR -z \
+        -- '*.c' '*.cc' '*.cpp' '*.cxx' \
+        '*.h' '*.hh' '*.hpp' '*.hxx'
+)
+
+# Nothing to format
+((${#files[@]})) || exit 0
+
+# Format and re-stage
+for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+        clang-format -i "$file"
+        git add -- "$file"
+    fi
+done
