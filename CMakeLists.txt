@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.00)
-project(yfitops VERSION 0.1.0 LANGUAGES CXX)
+project(peyvand VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -1,4 +1,4 @@
-function(yfitops_set_warnings target)
+function(peyvand_set_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4)
   else()

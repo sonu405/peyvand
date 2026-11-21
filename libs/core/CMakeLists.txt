@@ -1,12 +1,20 @@
-add_library(yfitops_core STATIC
-    src/core.cpp
+add_library(peyvand_core STATIC
+    src/PeerID.cpp
+    src/Migrations.cpp
 )
 
-add_library(yfitops::core ALIAS yfitops_core)
+add_library(peyvand::core ALIAS peyvand_core)
 
-target_include_directories(yfitops_core
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
+target_include_directories(peyvand_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-yfitops_set_warnings(yfitops_core)
+target_link_libraries(peyvand_core PUBLIC 
+        unofficial::sqlite3::sqlite3 
+        SQLiteCpp
+)
+
+peyvand_set_warnings(peyvand_core)

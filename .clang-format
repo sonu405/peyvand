@@ -10,6 +10,10 @@ BreakBeforeBraces: Attach
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 
+BreakConstructorInitializers: AfterColon # Options: BeforeColon, BeforeComma, AfterColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ConstructorInitializerIndentWidth: 4
+
 PointerAlignment: Left
 ReferenceAlignment: Left
 

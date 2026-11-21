@@ -14,7 +14,13 @@ target_compile_definitions(asio::asio INTERFACE ASIO_STANDALONE)
 find_package(Protobuf CONFIG REQUIRED)    # gives protobuf::libprotobuf, protobuf::protoc
 
 # --- SQLite ---
-find_package(SQLite3 REQUIRED)            # gives SQLite::SQLite3
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
+# --- SQLiteCpp ---                       # wrapper for sqlite3
+find_package(SQLiteCpp CONFIG REQUIRED)
 
 # --- spdlog ---
 find_package(spdlog CONFIG REQUIRED)      # gives spdlog::spdlog
+
+# -- cli11 ---
+find_package(CLI11 CONFIG REQUIRED)

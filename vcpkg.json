@@ -1,11 +1,13 @@
 {
-  "name": "yfitops",
+  "name": "peyvand",
   "version": "0.1.0",
   "dependencies": [
     "asio",
     "protobuf",
     "sqlite3",
-    "spdlog"
+    "sqlitecpp",
+    "spdlog",
+    "cli11"
   ],
   "builtin-baseline": "af839a44c17a927468f35c7a65e200aeba337da4"
 }
