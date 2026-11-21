@@ -1,4 +1,7 @@
-add_library(peyvand_proto STATIC peyvand/messages.proto)
+add_library(peyvand_proto STATIC 
+  peyvand/messages.proto
+  peyvand/packet.proto
+)
 add_library(peyvand::proto ALIAS peyvand_proto)
 
 target_link_libraries(peyvand_proto PUBLIC protobuf::libprotobuf)

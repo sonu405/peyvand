@@ -1,0 +1,19 @@
+syntax = "proto3";
+package peyvand;
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;  // proto3 requires a zero value
+  MESSAGE_TYPE_PING = 1;
+  MESSAGE_TYPE_PONG = 2;
+}
+
+message Packet {
+  uint64 id = 1;
+  bytes sender_id = 2;
+  MessageType type = 3;
+  bytes payload = 4;
+}
+
+// nonce -- number used once to identify the pings and its returned pong.
+message Ping { uint64 nonce = 1; }  
+message Pong { uint64 nonce = 1; }
