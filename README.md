@@ -67,3 +67,9 @@ LEAVE	Graceful end of session.
 seed.example.org:9000
 a3f9c1d2-7b4e-4c1a-9f20-5d8e1b6a0c33@10.0.0.5:9000   # pinned identity
 ```
+
+# PEX
+Two triggers: 
+1.After a handshake completes, in both the SYN and SYN_ACK handlers: sendPacket(from, MESSAGE_TYPE_PEX_REQUEST, peyvand::PexRequest{});
+
+2. Periodically, a coroutine like heartBeatsLoop with kPexInterval, sending a request to every established peer.

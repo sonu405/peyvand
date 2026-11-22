@@ -24,11 +24,13 @@ class Peer {
     static constexpr auto kSessionTimeout = std::chrono::seconds(10);
     // maximum Peers in each response to Peer Exchange Request (PEX)
     static constexpr int kPexMax = 20;
+    static constexpr auto kPexInterval = std::chrono::seconds(30);
 
     Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db);
     awaitable<void> handleReq();
     awaitable<void> probeLoop();
     awaitable<void> heartBeatsLoop();
+    awaitable<void> pexLoop();
 
     template <std::derived_from<google::protobuf::Message> Msg>
     void sendPacket(const asio::ip::udp::endpoint& to, peyvand::MessageType type, const Msg& body) {
@@ -51,8 +53,7 @@ class Peer {
 
         socket_.async_send_to(asio::buffer(*wire), to,
                               [wire](const asio::error_code& ec, std::size_t) {
-                                  if (ec)
-                                      spdlog::warn("send failed: {}", ec.message());
+                                  if (ec) spdlog::warn("send failed: {}", ec.message());
                               });
     }
 

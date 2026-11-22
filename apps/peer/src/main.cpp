@@ -44,14 +44,14 @@ int main(int argc, char** argv) {
         peer.loadKnownPeers();
         //  ---- Bootstrapping candidates ----
         if (!bootstrap_file_path.empty()) {
-            for (const auto& ep : peer.load_bootstrap_file(bootstrap_file_path))
+            for (const auto& ep : peer.load_bootstrap_file(bootstrap_file_path)) {
                 peer.peerBook.addCandidate(ep);
+            }
         }
 
         asio::signal_set signals(ctx, SIGINT, SIGTERM);
         signals.async_wait([&](const asio::error_code& error, int signal_number) {
-            if (error)
-                return;
+            if (error) return;
             spdlog::info("signal {} received, stopping", signal_number);
             peer.GoodbyeAll(); // synchronous sends, before anything is torn down
             peer.saveKnownPeers();
@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
         asio::co_spawn(ctx, peer.handleReq(), asio::detached);
         asio::co_spawn(ctx, peer.probeLoop(), asio::detached);
         asio::co_spawn(ctx, peer.heartBeatsLoop(), asio::detached);
+        asio::co_spawn(ctx, peer.pexLoop(), asio::detached);
         ctx.run();
     } catch (const std::exception& e) {
         spdlog::critical("fatal: {}", e.what());
