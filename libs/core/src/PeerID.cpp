@@ -52,3 +52,12 @@ std::string PeerID::to_string() const {
     }
     return s;
 }
+
+std::string PeerID::short_tag() const {
+    std::string s;
+    for (std::size_t i = 0; i < 2; ++i) {  // first 2 bytes = 4 hex chars
+        s.push_back(kHex[bytes_[i] >> 4]);
+        s.push_back(kHex[bytes_[i] & 0x0F]);
+    }
+    return s;
+}

@@ -22,6 +22,14 @@ class Dispatcher {
     using Handler = std::function<void(const asio::ip::udp::endpoint& from, const PeerID& sender,
                                        const peyvand::Packet& pkt)>;
 
+    // Returns true if the packet may reach its handler.
+    using Gate =
+        std::function<bool(const asio::ip::udp::endpoint&, const PeerID&, const peyvand::Packet&)>;
+
+    void setGate(Gate g) {
+        gate_ = std::move(g);
+    }
+
     void on(peyvand::MessageType t, Handler h);
 
     void dispatch(const asio::ip::udp::endpoint& from, const peyvand::Packet& pkt) {
@@ -32,6 +40,10 @@ class Dispatcher {
             spdlog::warn("dropped packet: bad sender_id from {}", from.address().to_string());
             return;
         }
+
+        // gate acts as filter
+        if (gate_ && !gate_(from, *sender, pkt))
+            return;
 
         auto it = handlers_.find(pkt.type());
         if (it == handlers_.end()) {
@@ -44,5 +56,6 @@ class Dispatcher {
     }
 
   private:
+    Gate gate_;
     std::unordered_map<peyvand::MessageType, Handler> handlers_;
 };

@@ -2,6 +2,7 @@ add_library(peyvand_core STATIC
     src/PeerID.cpp
     src/Migrations.cpp
     src/Dispatcher.cpp
+    src/PeerBook.cpp
 )
 
 add_library(peyvand::core ALIAS peyvand_core)

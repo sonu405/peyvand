@@ -22,6 +22,7 @@ class PeerID {
         return bytes_;
     }
     std::string to_string() const; // dashed UUID
+    std::string short_tag() const;
 
     friend bool operator==(const PeerID&, const PeerID&) = default;
     friend auto operator<=>(const PeerID&, const PeerID&) = default;

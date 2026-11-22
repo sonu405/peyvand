@@ -5,6 +5,10 @@ enum MessageType {
   MESSAGE_TYPE_UNSPECIFIED = 0;  // proto3 requires a zero value
   MESSAGE_TYPE_PING = 1;
   MESSAGE_TYPE_PONG = 2;
+  MESSAGE_TYPE_SYN = 3;
+  MESSAGE_TYPE_SYN_ACK = 4;
+  MESSAGE_TYPE_RESET = 5;
+  MESSAGE_TYPE_LEAVE = 6;
 }
 
 message Packet {
@@ -17,3 +21,7 @@ message Packet {
 // nonce -- number used once to identify the pings and its returned pong.
 message Ping { uint64 nonce = 1; }  
 message Pong { uint64 nonce = 1; }
+message Syn {}
+message SynAck{}
+message Reset{}
+message Leave{}

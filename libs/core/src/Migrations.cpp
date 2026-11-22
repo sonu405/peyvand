@@ -16,7 +16,21 @@ constexpr std::array kMigrations = {
             peer_id BLOB NOT NULL CHECK (length(peer_id) = 16)
         ) STRICT;
     )sql"},
-    // v2: next entries below.
+
+    // last_success and fail_count are for bootstrap. On startup,
+    // we sort by recent success and few failures, and evict entries that
+    // keep failing.
+    std::string_view{R"sql(
+        CREATE TABLE known_peers (
+            peer_id      BLOB PRIMARY KEY CHECK (length(peer_id) = 16),
+            address      TEXT    NOT NULL,
+            port         INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+            first_seen   INTEGER NOT NULL,   -- unix seconds
+            last_success INTEGER NOT NULL,   -- last completed handshake or valid packet
+            fail_count   INTEGER NOT NULL DEFAULT 0,
+            source       INTEGER NOT NULL    -- 0 inbound, 1 bootstrap, 2 pex
+        ) STRICT;
+        )sql"},
 };
 
 } // namespace
