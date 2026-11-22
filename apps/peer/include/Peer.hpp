@@ -83,7 +83,13 @@ class Peer {
     std::vector<asio::ip::udp::endpoint> load_bootstrap_file(const std::filesystem::path& path);
     std::optional<asio::ip::udp::endpoint> parse_bootstrap_line(std::string_view line);
     void GoodbyeAll();
+    void loadKnownPeers();
+    void saveKnownPeers();
 
+    // Getters
+    SQLite::Database& db();
+
+    // Attributes
     PeerBook::Book peerBook;
 
   private:

@@ -226,3 +226,25 @@ void Peer::GoodbyeAll() {
     for (const auto& [id, session] : peerBook.established())
         sendPacketSync(session.endpoint, peyvand::MESSAGE_TYPE_LEAVE, leave);
 }
+
+SQLite::Database& Peer::db() {
+    return db_;
+};
+
+void Peer::saveKnownPeers() {
+    try {
+        peerBook.flushKnown(db_);
+        spdlog::info("saved known peers");
+    } catch (const std::exception& e) {
+        spdlog::error("failed to save known peers: {}", e.what());
+    }
+}
+
+void Peer::loadKnownPeers() {
+    try {
+        const auto n = peerBook.loadKnownAsCandidates(db_, 64);
+        spdlog::info("loaded {} known peers as candidates", n);
+    } catch (const std::exception& e) {
+        spdlog::error("failed to load known peers: {}", e.what());
+    }
+}

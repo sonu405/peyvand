@@ -41,6 +41,7 @@ int main(int argc, char** argv) {
         asio::io_context ctx;
         Peer peer(ctx, port, db);
 
+        peer.loadKnownPeers();
         //  ---- Bootstrapping candidates ----
         if (!bootstrap_file_path.empty()) {
             for (const auto& ep : peer.load_bootstrap_file(bootstrap_file_path))
@@ -53,6 +54,8 @@ int main(int argc, char** argv) {
                 return;
             spdlog::info("signal {} received, stopping", signal_number);
             peer.GoodbyeAll(); // synchronous sends, before anything is torn down
+            peer.saveKnownPeers();
+
             ctx.stop();
         });
 

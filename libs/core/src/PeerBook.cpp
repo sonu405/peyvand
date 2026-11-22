@@ -1,4 +1,5 @@
 #include "PeerBook.hpp"
+#include <SQLiteCpp/SQLiteCpp.h>
 #include <algorithm>
 
 bool PeerBook::Book::addCandidate(const Endpoint& ep, std::optional<PeerID> id) {
@@ -100,4 +101,66 @@ void PeerBook::Book::removeEstablished(const PeerID& id) {
 
 std::unordered_map<PeerID, PeerBook::Established>& PeerBook::Book::established() {
     return established_;
+}
+
+void PeerBook::Book::flushKnown(SQLite::Database& db) const {
+    const auto steadyNow = Clock::now();
+    const auto sysNow = std::chrono::system_clock::now();
+
+    SQLite::Transaction tx(db, SQLite::TransactionBehavior::IMMEDIATE);
+    SQLite::Statement upsert(db, "INSERT INTO known_peers (peer_id, address, port, first_seen, "
+                                 "last_success, fail_count, source) "
+                                 "VALUES (?1, ?2, ?3, ?4, ?4, ?5, 0) "
+                                 "ON CONFLICT(peer_id) DO UPDATE SET "
+                                 "  address = excluded.address, "
+                                 "  port = excluded.port, "
+                                 "  last_success = excluded.last_success, "
+                                 "  fail_count = excluded.fail_count");
+
+    for (const auto& [id, k] : known_) {
+        const auto unixSecs = std::chrono::duration_cast<std::chrono::seconds>(
+                                  (sysNow - (steadyNow - k.last_success)).time_since_epoch())
+                                  .count();
+
+        upsert.bind(1, id.bytes().data(), static_cast<int>(id.bytes().size()));
+        upsert.bind(2, k.endpoint.address().to_string());
+        upsert.bind(3, static_cast<int>(k.endpoint.port()));
+        upsert.bind(4, static_cast<int64_t>(unixSecs));
+        upsert.bind(5, k.fail_count);
+        upsert.exec();
+        upsert.reset();
+        upsert.clearBindings();
+    }
+    tx.commit();
+}
+
+// PeerBook.cpp
+size_t PeerBook::Book::loadKnownAsCandidates(SQLite::Database& db, size_t maxRows) {
+    SQLite::Statement q(db, "SELECT peer_id, address, port FROM known_peers "
+                            "ORDER BY fail_count ASC, last_success DESC LIMIT ?1");
+    q.bind(1, static_cast<int64_t>(maxRows));
+
+    size_t added = 0;
+    while (q.executeStep()) {
+        const auto idCol = q.getColumn(0);
+        const std::span<const uint8_t> blob{static_cast<const uint8_t*>(idCol.getBlob()),
+                                            static_cast<std::size_t>(idCol.getBytes())};
+        const auto id = PeerID::from_bytes(blob);
+        if (!id) {
+            spdlog::warn("known_peers: skipping row with bad peer_id");
+            continue;
+        }
+
+        asio::error_code ec;
+        const auto addr = asio::ip::make_address_v4(q.getColumn(1).getString(), ec);
+        const int port = q.getColumn(2).getInt();
+        if (ec || addr.is_unspecified() || port < 1 || port > 65535) {
+            spdlog::warn("known_peers: skipping row with bad address");
+            continue;
+        }
+
+        if (addCandidate(Endpoint(addr, static_cast<uint16_t>(port)), *id))
+            ++added;
+    }
+    return added;
 }
