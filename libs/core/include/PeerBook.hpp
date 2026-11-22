@@ -1,6 +1,5 @@
 #pragma once
 #include "PeerID.hpp"
-#include "spdlog/spdlog.h"
 #include <asio.hpp>
 #include <asio/detail/chrono.hpp>
 #include <chrono>
@@ -52,9 +51,11 @@ class Book {
     bool completeCandidate(const Endpoint& ep, const PeerID& id);
     void removeCandidate(const Endpoint& ep);
     void removeEstablished(const PeerID& id);
+    std::vector<PeerID> expireEstablished(Duration timeout);
 
     void flushKnown(SQLite::Database& db) const;
     size_t loadKnownAsCandidates(SQLite::Database& db, size_t maxRows);
+    bool touch(const PeerID& id, const Endpoint& ep);
 
     // Getters
     std::unordered_map<PeerID, Established>& established();

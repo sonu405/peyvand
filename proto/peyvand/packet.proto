@@ -9,6 +9,9 @@ enum MessageType {
   MESSAGE_TYPE_SYN_ACK = 4;
   MESSAGE_TYPE_RESET = 5;
   MESSAGE_TYPE_LEAVE = 6;
+  MESSAGE_TYPE_HEARTBEAT = 7;
+  MESSAGE_TYPE_PEX_REQUEST = 8;
+  MESSAGE_TYPE_PEX_RESPONSE = 9;
 }
 
 message Packet {
@@ -25,3 +28,13 @@ message Syn {}
 message SynAck{}
 message Reset{}
 message Leave{}
+
+message Heartbeat{}
+message PeerRecord {
+  bytes peer_id = 1;
+  uint32 ipv4 = 2;
+  uint32 port = 3;
+}
+
+message PexRequest {}
+message PexResponse {repeated PeerRecord peers = 1; }

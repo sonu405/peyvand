@@ -12,8 +12,8 @@
 
 int main(int argc, char** argv) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
-    spdlog::cfg::load_env_levels(); // then run: SPDLOG_LEVEL=debug ./peyvand_peer ...
-    spdlog::set_level(spdlog::level::debug);
+    // spdlog::cfg::load_env_levels(); // then run: SPDLOG_LEVEL=debug ./peyvand_peer ...
+    // spdlog::set_level(spdlog::level::debug);
 
     CLI::App app{"peyvand peer"};
     std::string data_dir_arg;
@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
 
         asio::co_spawn(ctx, peer.handleReq(), asio::detached);
         asio::co_spawn(ctx, peer.probeLoop(), asio::detached);
+        asio::co_spawn(ctx, peer.heartBeatsLoop(), asio::detached);
         ctx.run();
     } catch (const std::exception& e) {
         spdlog::critical("fatal: {}", e.what());

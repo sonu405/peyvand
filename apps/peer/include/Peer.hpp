@@ -6,6 +6,7 @@
 #include <PeerBook.hpp>
 #include <asio.hpp>
 #include <asio/awaitable.hpp>
+#include <chrono>
 #include <optional>
 #include <spdlog/spdlog.h>
 
@@ -19,10 +20,15 @@ class Peer {
     static constexpr auto kTick = std::chrono::milliseconds(500);
     static constexpr auto kRetryDelay = std::chrono::seconds(2);
     static constexpr int kMaxAttempts = 5;
+    static constexpr auto kHeartbeatInterval = std::chrono::seconds(2);
+    static constexpr auto kSessionTimeout = std::chrono::seconds(10);
+    // maximum Peers in each response to Peer Exchange Request (PEX)
+    static constexpr int kPexMax = 20;
 
     Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db);
     awaitable<void> handleReq();
     awaitable<void> probeLoop();
+    awaitable<void> heartBeatsLoop();
 
     template <std::derived_from<google::protobuf::Message> Msg>
     void sendPacket(const asio::ip::udp::endpoint& to, peyvand::MessageType type, const Msg& body) {

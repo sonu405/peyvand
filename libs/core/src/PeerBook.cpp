@@ -1,4 +1,6 @@
 #include "PeerBook.hpp"
+#include "PeerID.hpp"
+#include "spdlog/spdlog.h"
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <algorithm>
 
@@ -99,6 +101,27 @@ void PeerBook::Book::removeEstablished(const PeerID& id) {
     established_.erase(id);
 }
 
+std::vector<PeerID> PeerBook::Book::expireEstablished(Duration timeout) {
+    const auto now = Clock::now(); // one timestamp for the whole sweep
+    std::vector<PeerID> dead;
+
+    for (auto it = established_.begin(); it != established_.end();) {
+        if (now - it->second.last_seen > timeout) {
+            dead.push_back(it->first);
+
+            // increase failcount;
+            if (auto k = known_.find(it->first); k != known_.end()) {
+                k->second.fail_count++;
+            }
+
+            it = established_.erase(it); // returns the next valid iterator
+        } else {
+            ++it;
+        }
+    }
+    return dead;
+}
+
 std::unordered_map<PeerID, PeerBook::Established>& PeerBook::Book::established() {
     return established_;
 }
@@ -163,4 +186,12 @@ size_t PeerBook::Book::loadKnownAsCandidates(SQLite::Database& db, size_t maxRow
             ++added;
     }
     return added;
+}
+
+bool PeerBook::Book::touch(const PeerID& id, const Endpoint& ep) {
+    auto it = established_.find(id);
+    if (it == established_.end() || it->second.endpoint != ep)
+        return false;
+    it->second.last_seen = Clock::now();
+    return true;
 }

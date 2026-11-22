@@ -1,6 +1,8 @@
 #include "Peer.hpp"
 #include "peyvand/packet.pb.h"
+#include <asio/as_tuple.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/use_awaitable.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -11,6 +13,7 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
     spdlog::info("ID: {} Handling requests on {}:{}!!", peerId_.short_tag(),
                  socket_.local_endpoint().address().to_string(), socket_.local_endpoint().port());
 
+    // true --> bypass gate, go to dispatch handler
     dispatcher_.setGate(
         [this](const udp::endpoint& from, const PeerID& sender, const peyvand::Packet& pkt) {
             const auto type = pkt.type();
@@ -18,9 +21,11 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
             if (type == peyvand::MESSAGE_TYPE_SYN || type == peyvand::MESSAGE_TYPE_SYN_ACK)
                 return true; // handshake bypasses the gate
 
-            const auto* s = peerBook.session(sender);
-            if (s && s->endpoint == from)
-                return true; // established, endpoint matches
+            // touch validates that the pkt came from established connection
+            // It also updates the last_seen.
+            if (peerBook.touch(sender, from)) {
+                return true;
+            }
 
             // Not established. Never answer a RESET with a RESET.
             if (type != peyvand::MESSAGE_TYPE_RESET)
@@ -134,9 +139,29 @@ asio::awaitable<void> Peer::probeLoop() {
         if (ec)
             co_return; // cancelled on shutdown
 
-        const auto now = std::chrono::steady_clock::now();
+        for (const auto& id : peerBook.expireEstablished(Peer::kSessionTimeout)) {
+            spdlog::info("{} timed out", id.short_tag());
+        }
+
+        const auto now = PeerBook::Clock::now();
         for (const auto& ep : peerBook.dueCandidates(now, kRetryDelay, kMaxAttempts))
             sendPacket(ep, peyvand::MESSAGE_TYPE_SYN, peyvand::Syn{});
+    }
+}
+
+awaitable<void> Peer::heartBeatsLoop() {
+    asio::steady_timer timer(co_await asio::this_coro::executor);
+
+    for (;;) {
+        timer.expires_after(kHeartbeatInterval);
+        auto [ec] = co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
+        if (ec)
+            co_return;
+
+        peyvand::Heartbeat heartbeat;
+        for (const auto& [id, peer] : peerBook.established()) {
+            sendPacket(peer.endpoint, peyvand::MESSAGE_TYPE_HEARTBEAT, heartbeat);
+        }
     }
 }
 
