@@ -2,6 +2,7 @@
 
 #include "Dispatcher.hpp"
 #include "PeerID.hpp"
+#include "ReliableTransport.hpp"
 #include "peyvand/packet.pb.h"
 #include <PeerBook.hpp>
 #include <asio.hpp>
@@ -31,6 +32,11 @@ class Peer {
     awaitable<void> probeLoop();
     awaitable<void> heartBeatsLoop();
     awaitable<void> pexLoop();
+
+    // Stage 2 -- reliable transport
+    awaitable<void> reliableLoop(); // periodically tick() -> timeouts/retransmit
+    awaitable<void> chatTestLoop(); // demo: har few sec har established peer ko reliable message
+    void reliableSend(const PeerID& to, const std::string& msg);
 
     template <std::derived_from<google::protobuf::Message> Msg>
     void sendPacket(const asio::ip::udp::endpoint& to, peyvand::MessageType type, const Msg& body) {
@@ -104,6 +110,7 @@ class Peer {
     PeerID peerId_;
     udp::socket socket_;
     Dispatcher dispatcher_;
+    std::optional<ReliableTransport> reliable_; // Stage 2 (constructor mein emplace hota)
 
     // Packet id's
     uint64_t nextId_ = 1;

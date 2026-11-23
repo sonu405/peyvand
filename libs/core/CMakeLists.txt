@@ -3,6 +3,7 @@ add_library(peyvand_core STATIC
     src/Migrations.cpp
     src/Dispatcher.cpp
     src/PeerBook.cpp
+    src/ReliableTransport.cpp
 )
 
 add_library(peyvand::core ALIAS peyvand_core)
