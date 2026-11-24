@@ -1,5 +1,6 @@
 #include "Peer.hpp"
 #include "peyvand/packet.pb.h"
+#include <SQLiteCpp/SQLiteCpp.h>
 #include <asio/as_tuple.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
@@ -66,6 +67,7 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
         peerBook.updateToEstablished(sender, from, now);
 
         spdlog::info("established with {}", sender.short_tag());
+        if (reliable_) reliable_->onPeerEstablished(sender); // Stage 2: resume handshake + resend
 
         peyvand::SynAck synAck;
 
@@ -88,17 +90,21 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
                        peerBook.updateToKnown(sender, from, now);
                        peerBook.updateToEstablished(sender, from, now);
                        spdlog::info("established with {}", sender.short_tag());
+                       if (reliable_)
+                           reliable_->onPeerEstablished(sender); // Stage 2: resume handshake + resend
                    });
 
     dispatcher_.on(peyvand::MESSAGE_TYPE_LEAVE, [this](const auto& /*from*/, const PeerID& sender,
                                                        const peyvand::Packet& /*pkt*/) {
         peerBook.removeEstablished(sender);
+        if (reliable_) reliable_->onPeerLost(sender); // Stage 2: park state (resume on return)
         spdlog::info("{} left", sender.short_tag());
     });
 
     dispatcher_.on(peyvand::MESSAGE_TYPE_RESET,
                    [this](const auto& from, const PeerID& sender, const peyvand::Packet& /*pkt*/) {
                        peerBook.removeEstablished(sender);
+                       if (reliable_) reliable_->onPeerLost(sender); // Stage 2: park state
                        peerBook.addCandidate(from, sender);
                        spdlog::info("RESET from {}, re-handshaking", sender.short_tag());
                    });
@@ -147,7 +153,102 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
         }
     });
 
-    // ---- Stage 2: reliable transport (Selective Repeat) ----
+    // ---- Stage 2: reliable transport (Selective Repeat + persistence) ----
+    //
+    // Durable store (SQLite): har callback ek chhota, seedha DB op. Yahi "resume from exact
+    // sequence" ko mumkin banata -- state disk pe hai, process restart bache.
+    ReliableTransport::Store rtStore;
+
+    // outbound: agle message ko absolute offset do (next_send_offset++ persist)
+    rtStore.reserveSendOffset = [this](const PeerID& to) -> uint64_t {
+        SQLite::Transaction tx(db_, SQLite::TransactionBehavior::IMMEDIATE);
+        {
+            SQLite::Statement ins(
+                db_, "INSERT OR IGNORE INTO rt_cursor(peer_id,next_send_offset,delivered_offset) "
+                     "VALUES(?1,1,0)");
+            ins.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+            ins.exec();
+        }
+        uint64_t off = 1;
+        {
+            SQLite::Statement sel(db_, "SELECT next_send_offset FROM rt_cursor WHERE peer_id=?1");
+            sel.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+            if (sel.executeStep()) off = static_cast<uint64_t>(sel.getColumn(0).getInt64());
+        }
+        {
+            SQLite::Statement upd(db_, "UPDATE rt_cursor SET next_send_offset=?2 WHERE peer_id=?1");
+            upd.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+            upd.bind(2, static_cast<int64_t>(off + 1));
+            upd.exec();
+        }
+        tx.commit();
+        return off;
+    };
+
+    // outbound: (offset,payload) ko durable outbox mein likho (jab tak deliver na ho)
+    rtStore.putOutbox = [this](const PeerID& to, uint64_t offset, const std::string& payload) {
+        SQLite::Statement ins(
+            db_, "INSERT OR REPLACE INTO rt_outbox(peer_id,abs_offset,payload) VALUES(?1,?2,?3)");
+        ins.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+        ins.bind(2, static_cast<int64_t>(offset));
+        ins.bind(3, payload.data(), static_cast<int>(payload.size()));
+        ins.exec();
+    };
+
+    // outbound: deliver ho chuke (offset <= upto) ko durable outbox se hata do
+    rtStore.dropOutboxUpTo = [this](const PeerID& to, uint64_t upto) {
+        SQLite::Statement del(db_, "DELETE FROM rt_outbox WHERE peer_id=?1 AND abs_offset<=?2");
+        del.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+        del.bind(2, static_cast<int64_t>(upto));
+        del.exec();
+    };
+
+    // outbound: resume ke liye un-delivered (offset > above) ascending load karo
+    rtStore.loadOutboxAbove =
+        [this](const PeerID& to, uint64_t above) -> std::vector<std::pair<uint64_t, std::string>> {
+        std::vector<std::pair<uint64_t, std::string>> out;
+        SQLite::Statement sel(db_, "SELECT abs_offset,payload FROM rt_outbox WHERE peer_id=?1 AND "
+                                   "abs_offset>?2 ORDER BY abs_offset ASC");
+        sel.bind(1, to.bytes().data(), static_cast<int>(to.bytes().size()));
+        sel.bind(2, static_cast<int64_t>(above));
+        while (sel.executeStep()) {
+            uint64_t off = static_cast<uint64_t>(sel.getColumn(0).getInt64());
+            const auto col = sel.getColumn(1);
+            std::string payload(static_cast<const char*>(col.getBlob()),
+                                static_cast<size_t>(col.getBytes()));
+            out.push_back({off, std::move(payload)});
+        }
+        return out;
+    };
+
+    // inbound: is peer se ab tak delivered absolute offset padho (0 agar naya)
+    rtStore.loadDelivered = [this](const PeerID& from) -> uint64_t {
+        SQLite::Statement sel(db_, "SELECT delivered_offset FROM rt_cursor WHERE peer_id=?1");
+        sel.bind(1, from.bytes().data(), static_cast<int>(from.bytes().size()));
+        if (sel.executeStep()) return static_cast<uint64_t>(sel.getColumn(0).getInt64());
+        return 0;
+    };
+
+    // inbound: delivered_offset aage barhao (kabhi peeche nahi -- guard: delivered_offset<?2)
+    rtStore.saveDelivered = [this](const PeerID& from, uint64_t off) {
+        SQLite::Transaction tx(db_, SQLite::TransactionBehavior::IMMEDIATE);
+        {
+            SQLite::Statement ins(
+                db_, "INSERT OR IGNORE INTO rt_cursor(peer_id,next_send_offset,delivered_offset) "
+                     "VALUES(?1,1,0)");
+            ins.bind(1, from.bytes().data(), static_cast<int>(from.bytes().size()));
+            ins.exec();
+        }
+        {
+            SQLite::Statement upd(db_, "UPDATE rt_cursor SET delivered_offset=?2 WHERE peer_id=?1 "
+                                       "AND delivered_offset<?2");
+            upd.bind(1, from.bytes().data(), static_cast<int>(from.bytes().size()));
+            upd.bind(2, static_cast<int64_t>(off));
+            upd.exec();
+        }
+        tx.commit();
+    };
+
     reliable_.emplace(
         // DATA bhejo: PeerID -> established endpoint -> sendPacket
         [this](const PeerID& to, const peyvand::Data& d) {
@@ -159,10 +260,16 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
             if (const auto* s = peerBook.session(to))
                 sendPacket(s->endpoint, peyvand::MESSAGE_TYPE_ACK, a);
         },
+        // RESUME bhejo (reconnect par "main yahan tak deliver kar chuka")
+        [this](const PeerID& to, const peyvand::Resume& r) {
+            if (const auto* s = peerBook.session(to))
+                sendPacket(s->endpoint, peyvand::MESSAGE_TYPE_RESUME, r);
+        },
         // in-order deliver -> app (abhi sirf log; chat yahan hook karega)
         [](const PeerID& from, const std::string& payload) {
             spdlog::info("RELIABLE DELIVER from {}: {}", from.short_tag(), payload);
-        });
+        },
+        rtStore);
 
     dispatcher_.on(peyvand::MESSAGE_TYPE_DATA,
                    [this](const auto& /*from*/, const PeerID& sender, const peyvand::Packet& pkt) {
@@ -176,6 +283,15 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
                        peyvand::Ack a;
                        if (!a.ParseFromString(pkt.payload())) return;
                        reliable_->onAck(sender, a);
+                   });
+
+    dispatcher_.on(peyvand::MESSAGE_TYPE_RESUME,
+                   [this](const auto& /*from*/, const PeerID& sender, const peyvand::Packet& pkt) {
+                       peyvand::Resume r;
+                       if (!r.ParseFromString(pkt.payload())) return;
+                       spdlog::info("RESUME from {}: peer delivered up to offset {} -> resend se age",
+                                    sender.short_tag(), r.delivered_offset());
+                       reliable_->onResume(sender, r);
                    });
 }
 
@@ -248,6 +364,7 @@ asio::awaitable<void> Peer::probeLoop() {
         if (ec) co_return; // cancelled on shutdown
 
         for (const auto& id : peerBook.expireEstablished(Peer::kSessionTimeout)) {
+            if (reliable_) reliable_->onPeerLost(id); // Stage 2: park state (resume on reconnect)
             spdlog::info("{} timed out", id.short_tag());
         }
 

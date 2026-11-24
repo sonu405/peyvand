@@ -14,6 +14,7 @@ enum MessageType {
   MESSAGE_TYPE_PEX_RESPONSE = 9;
   MESSAGE_TYPE_DATA = 10;  // reliable transport: data packet  (Stage 2)
   MESSAGE_TYPE_ACK = 11;   // reliable transport: ACK (transport ACK, SYN_ACK se alag)
+  MESSAGE_TYPE_RESUME = 12; // reliable transport: reconnect par "main yahan tak deliver kar chuka" (Stage 2 persistence)
 }
 
 message Packet {
@@ -41,6 +42,17 @@ message PeerRecord {
 message PexRequest {}
 message PexResponse {repeated PeerRecord peers = 1; }
 
-// Reliable transport (Stage 2 -- Selective Repeat)
-message Data { uint32 seq = 1; bytes payload = 2; }  // seq = sequence number, payload = app bytes
-message Ack  { uint32 seq = 1; }                      // "seq mil gaya"
+// Reliable transport (Stage 2 -- Selective Repeat + persistence)
+//
+// seq    = live window sequence (mod SEQUENCE_SPACE) -- sirf is session ki sliding-window ARQ ke liye.
+// offset = ABSOLUTE monotonic message number (per peer, kabhi wrap nahi) -- yahi disk pe persist hota,
+//          yahi "resume from exact sequence" aur cross-session duplicate-drop ko mumkin banata.
+message Data { uint32 seq = 1; bytes payload = 2; uint64 offset = 3; }
+
+// delivered_offset = receiver ne is peer se ab tak jitne absolute offset tak IN-ORDER deliver kiye.
+// Sender isse apna durable outbox prune karta hai (jo deliver ho gaya use disk se hata do).
+message Ack  { uint32 seq = 1; uint64 delivered_offset = 2; }
+
+// RESUME: reconnect par receiver sender ko batata hai "main tumse offset X tak deliver kar chuka,
+// ab X+1 se bhejo" -- taake delivery 0 se nahi, EXACT agle offset se resume ho.
+message Resume { uint64 delivered_offset = 1; }

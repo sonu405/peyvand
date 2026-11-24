@@ -31,6 +31,31 @@ constexpr std::array kMigrations = {
             source       INTEGER NOT NULL    -- 0 inbound, 1 bootstrap, 2 pex
         ) STRICT;
         )sql"},
+
+    // -------- Stage 2 persistence (resume-from-exact-offset) --------
+    // Per-peer cursors. Yeh row hi "hum is peer ke saath kahan the" ko disk pe yaad rakhti hai,
+    // taake process band ho ke dobara khule to delivery 0 se nahi, exact agle offset se chale.
+    //   next_send_offset = agla ABSOLUTE offset jo main is peer ko bhejne wale message ko dunga
+    //   delivered_offset = is peer SE maine ab tak jitne offset tak IN-ORDER deliver kiye
+    std::string_view{R"sql(
+        CREATE TABLE rt_cursor (
+            peer_id          BLOB PRIMARY KEY CHECK (length(peer_id) = 16),
+            next_send_offset INTEGER NOT NULL DEFAULT 1,  -- 0 ka matlab "kuch nahi", isliye 1 se shuru
+            delivered_offset INTEGER NOT NULL DEFAULT 0
+        ) STRICT;
+        )sql"},
+
+    // Durable send-queue: har bheja hua message jab tak receiver IN-ORDER deliver na kar de,
+    // yahan disk pe rehta hai. Reconnect par yahin se un-delivered messages dobara load+resend hote.
+    // deliver confirm hone par (ACK ka delivered_offset) yahan se hat jate hain -- DB chhota rehta.
+    std::string_view{R"sql(
+        CREATE TABLE rt_outbox (
+            peer_id    BLOB    NOT NULL CHECK (length(peer_id) = 16),
+            abs_offset INTEGER NOT NULL,          -- absolute offset (NOT window seq)
+            payload    BLOB    NOT NULL,
+            PRIMARY KEY (peer_id, abs_offset)
+        ) STRICT;
+        )sql"},
 };
 
 } // namespace
