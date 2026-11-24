@@ -32,6 +32,7 @@ struct Known {
 struct Established {
     Endpoint endpoint;
     TimePoint last_seen;
+    uint32_t session_id;
 };
 
 class Book {
@@ -55,7 +56,7 @@ class Book {
 
     void flushKnown(SQLite::Database& db) const;
     size_t loadKnownAsCandidates(SQLite::Database& db, size_t maxRows);
-    bool touch(const PeerID& id, const Endpoint& ep);
+    bool touch(const PeerID& id, const Endpoint& ep, uint32_t session_id);
 
     // Getters
     std::unordered_map<PeerID, Established>& established();

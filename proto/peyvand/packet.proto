@@ -17,8 +17,9 @@ enum MessageType {
 message Packet {
   uint64 id = 1;
   bytes sender_id = 2;
-  MessageType type = 3;
-  bytes payload = 4;
+  uint32 session_id = 3;   // sender's session id, changes on every handshake
+  MessageType type = 4;
+  bytes payload = 5;
 }
 
 // nonce -- number used once to identify the pings and its returned pong.

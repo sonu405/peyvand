@@ -73,3 +73,9 @@ Two triggers:
 1.After a handshake completes, in both the SYN and SYN_ACK handlers: sendPacket(from, MESSAGE_TYPE_PEX_REQUEST, peyvand::PexRequest{});
 
 2. Periodically, a coroutine like heartBeatsLoop with kPexInterval, sending a request to every established peer.
+
+
+# NOTES
+1. If we get a packet from a user with the same endpoint and peer_id but a different session_id, we don't cater its requests so that its forced to restart. 
+
+WE can optionally send a reset.

@@ -3,11 +3,11 @@
 #include "spdlog/spdlog.h"
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <algorithm>
+#include <random>
 
 bool PeerBook::Book::addCandidate(const Endpoint& ep, std::optional<PeerID> id) {
     // have we established conection with this candidate already?
-    if (isEstablished(ep))
-        return false;
+    if (isEstablished(ep)) return false;
 
     // Do we have already the incoming ep on some candidate?
     auto it =
@@ -40,7 +40,13 @@ const PeerBook::Established* PeerBook::Book::session(const PeerID& id) const {
 }
 
 void PeerBook::Book::updateToEstablished(const PeerID& id, const Endpoint& ep, TimePoint now) {
-    established_.insert_or_assign(id, Established{ep, now});
+    static std::random_device rd;
+    uint32_t session_id;
+    do {
+        session_id = rd();
+    } while (session_id == 0); // 0 = "no session"
+
+    established_.insert_or_assign(id, Established{ep, now, session_id});
 }
 
 void PeerBook::Book::updateToKnown(const PeerID& id, const Endpoint& ep, TimePoint now) {
@@ -57,10 +63,8 @@ std::vector<PeerBook::Endpoint> PeerBook::Book::dueCandidates(TimePoint now, Dur
 
     std::vector<Endpoint> out;
     for (auto& c : candidates_) {
-        if (c.nextRetry > now)
-            continue;
-        if (isEstablished(c.endpoint))
-            continue; // simultaneous-open guard
+        if (c.nextRetry > now) continue;
+        if (isEstablished(c.endpoint)) continue; // simultaneous-open guard
         c.state = Candidate::State::SynSent;
         ++c.attempts;
         c.nextRetry = now + retry;
@@ -81,12 +85,10 @@ bool PeerBook::Book::completeCandidate(const Endpoint& ep, const PeerID& id) {
         return c.endpoint == ep && c.state == Candidate::State::SynSent;
     });
 
-    if (it == candidates_.end())
-        return false;
+    if (it == candidates_.end()) return false;
 
     // SynAck sender has different id than the candiddate that was sent Syn.
-    if (it->peerID && *it->peerID != id)
-        return false;
+    if (it->peerID && *it->peerID != id) return false;
 
     // valid candidate. No more a candidate.
     candidates_.erase(it);
@@ -110,9 +112,7 @@ std::vector<PeerID> PeerBook::Book::expireEstablished(Duration timeout) {
             dead.push_back(it->first);
 
             // increase failcount;
-            if (auto k = known_.find(it->first); k != known_.end()) {
-                k->second.fail_count++;
-            }
+            if (auto k = known_.find(it->first); k != known_.end()) { k->second.fail_count++; }
 
             it = established_.erase(it); // returns the next valid iterator
         } else {
@@ -182,16 +182,20 @@ size_t PeerBook::Book::loadKnownAsCandidates(SQLite::Database& db, size_t maxRow
             continue;
         }
 
-        if (addCandidate(Endpoint(addr, static_cast<uint16_t>(port)), *id))
-            ++added;
+        if (addCandidate(Endpoint(addr, static_cast<uint16_t>(port)), *id)) ++added;
     }
     return added;
 }
 
-bool PeerBook::Book::touch(const PeerID& id, const Endpoint& ep) {
+bool PeerBook::Book::touch(const PeerID& id, const Endpoint& ep, const uint32_t session_id) {
     auto it = established_.find(id);
-    if (it == established_.end() || it->second.endpoint != ep)
-        return false;
+    if (it == established_.end() || it->second.endpoint != ep) return false;
     it->second.last_seen = Clock::now();
+
+    // session_id == 0 -- not allowed or a knwon peer with different session id.
+    // It would be forced to be dropped.
+    // WE can optionally send it a RESET.
+    if (session_id == 0 || session_id != it->second.session_id) return false;
+
     return true;
 }

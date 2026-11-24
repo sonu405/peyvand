@@ -25,7 +25,7 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
 
             // touch validates that the pkt came from established connection
             // It also updates the last_seen.
-            if (peerBook.touch(sender, from)) { return true; }
+            if (peerBook.touch(sender, from, pkt.session_id())) { return true; }
 
             // Not established. Never answer a RESET with a RESET.
             if (type != peyvand::MESSAGE_TYPE_RESET)
