@@ -41,6 +41,5 @@ message PeerRecord {
 message PexRequest {}
 message PexResponse {repeated PeerRecord peers = 1; }
 
-// Reliable transport (Stage 2 -- Selective Repeat)
-message Data { uint32 seq = 1; bytes payload = 2; }  // seq = sequence number, payload = app bytes
-message Ack  { uint32 seq = 1; }                      // "seq mil gaya"
+message Data { uint32 seq = 1; bytes payload = 2; uint64 offset = 3; }
+message Ack  { uint32 seq = 1; uint64 delivered_offset = 2; }
