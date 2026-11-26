@@ -79,3 +79,62 @@ Two triggers:
 1. If we get a packet from a user with the same endpoint and peer_id but a different session_id, we don't cater its requests so that its forced to restart. 
 
 WE can optionally send a reset.
+
+# Selective Repeat
+Scheme	            In flight   	On a loss
+Stop-and-wait	    1	            Resend that packet. The link sits idle while waiting.
+Go-Back-N	        up to N	        Resend the lost packet and everything after it, even packets that arrived.
+Selective Repeat	up to N	        Resend only the lost packet.
+
+Drawback of Selective Repeat: receiver must buffer out of order packets and sender much traack each packet individually.
+
+For implementation, both the sender and receiver need to keep a window of sequence numbers.
+
+### Sender state: 
+- `base`: the oldest unacknowledged sequence number
+- `next_seq`: the next number to assign
+- For each packet in `[base, base + W)`: its payload, send time, retry count, and an acked flag
+
+The sender may transmit while next_seq < base + W. When the window is full, new messages wait in a queue.
+
+
+### Receiver State
+- `rcv_base`: the next sequence number it expects to be delivered
+- A buffer for packets in `[rcv_base, rcv_base + W)` that arrived early
+
+### Simple Rules:
+1. The sender transmits packet `n` and starts a timer for that packet.
+2. The receiver gets packet n:
+    - If n is inside the window, store it and send ACK(n).
+    - If n < rcv_base (a duplicate of something already delivered), drop it but still send ACK(n), because the first ACK may have been the lost one.
+    - If n is beyond the window, drop it.
+    - While the buffer holds rcv_base, deliver it to the application and advance rcv_base. This is how a gap closing releases a run of buffered packets in order.
+
+3. The sender gets ACK(n): mark n acknowledged. If n == base, slide base forward to the next unacknowledged packet.
+4. If a packet's timer expires, retransmit only that packet and restart its timer. After a retry limit, report failure upward.
+
+
+### Implementation Details
+Details that matter in a real implementation
+- ACK format. Per-packet ACKs are the textbook form. A common refinement is a
+cumulative ACK plus a bitmap: "I have everything up to $a$, and also these
+packets after it". One ACK can then cover many packets, and a lost ACK is
+covered by the next one.
+
+- Timers. Don't create one timer per packet. Keep one timer per peer and flow,
+aimed at the earliest deadline.
+
+- Timeout value. Start with a fixed value, then move to the RFC 6298 estimator:
+$$\text{RTO} = \text{SRTT} + 4\,\text{RTTVAR}$$
+
+with exponential backoff on each timeout, and no RTT samples from retransmitted packets.
+
+- Flow control. The receiver's window size acts as flow control, since a slow
+receiver simply stops sliding. Congestion control is out of scope for your
+project.
+
+- Bounded buffers. Cap both the send queue and the reorder buffer, and fail the
+
+send when the queue is full.
+- Session lifetime. Tie sequence spaces to a session (reset on each handshake),
+so a restarted peer's sequence 1 isn't mistaken for a duplicate.

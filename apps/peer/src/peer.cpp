@@ -146,6 +146,70 @@ Peer::Peer(asio::io_context& ctx, uint16_t port, SQLite::Database& db) :
             peerBook.addCandidate(udp::endpoint(addr, static_cast<uint16_t>(r.port())), *id);
         }
     });
+
+    // ---- Stage 2: reliable transport (Selective Repeat) ----
+    reliable_.emplace(
+        // DATA bhejo: PeerID -> established endpoint -> sendPacket
+        [this](const PeerID& to, const peyvand::Data& d) {
+            if (const auto* s = peerBook.session(to))
+                sendPacket(s->endpoint, peyvand::MESSAGE_TYPE_DATA, d);
+        },
+        // ACK bhejo
+        [this](const PeerID& to, const peyvand::Ack& a) {
+            if (const auto* s = peerBook.session(to))
+                sendPacket(s->endpoint, peyvand::MESSAGE_TYPE_ACK, a);
+        },
+        // in-order deliver -> app (abhi sirf log; chat yahan hook karega)
+        [](const PeerID& from, const std::string& payload) {
+            spdlog::info("RELIABLE DELIVER from {}: {}", from.short_tag(), payload);
+        });
+
+    dispatcher_.on(peyvand::MESSAGE_TYPE_DATA,
+                   [this](const auto& /*from*/, const PeerID& sender, const peyvand::Packet& pkt) {
+                       peyvand::Data d;
+                       if (!d.ParseFromString(pkt.payload())) return;
+                       reliable_->onData(sender, d);
+                   });
+
+    dispatcher_.on(peyvand::MESSAGE_TYPE_ACK,
+                   [this](const auto& /*from*/, const PeerID& sender, const peyvand::Packet& pkt) {
+                       peyvand::Ack a;
+                       if (!a.ParseFromString(pkt.payload())) return;
+                       reliable_->onAck(sender, a);
+                   });
+}
+
+void Peer::reliableSend(const PeerID& to, const std::string& msg) {
+    if (reliable_) reliable_->send(to, msg);
+}
+
+awaitable<void> Peer::reliableLoop() {
+    asio::steady_timer timer(co_await asio::this_coro::executor);
+
+    for (;;) {
+        timer.expires_after(std::chrono::milliseconds(100)); // har 100ms timeout-check
+        auto [ec] = co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
+        if (ec) co_return;
+
+        if (reliable_) reliable_->tick();
+    }
+}
+
+awaitable<void> Peer::chatTestLoop() {
+    asio::steady_timer timer(co_await asio::this_coro::executor);
+    int n = 0;
+
+    for (;;) {
+        timer.expires_after(std::chrono::seconds(3));
+        auto [ec] = co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
+        if (ec) co_return;
+
+        // demo: har established peer ko ek reliable message bhejo
+        for (const auto& [id, peer] : peerBook.established()) {
+            reliableSend(id, "hello " + std::to_string(n) + " from " + peerId_.short_tag());
+        }
+        ++n;
+    }
 }
 
 awaitable<void> Peer::handleReq() {

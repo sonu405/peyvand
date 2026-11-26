@@ -12,6 +12,8 @@ enum MessageType {
   MESSAGE_TYPE_HEARTBEAT = 7;
   MESSAGE_TYPE_PEX_REQUEST = 8;
   MESSAGE_TYPE_PEX_RESPONSE = 9;
+  MESSAGE_TYPE_DATA = 10;  // reliable transport: data packet  (Stage 2)
+  MESSAGE_TYPE_ACK = 11;   // reliable transport: ACK (transport ACK, SYN_ACK se alag)
 }
 
 message Packet {
@@ -39,3 +41,6 @@ message PeerRecord {
 
 message PexRequest {}
 message PexResponse {repeated PeerRecord peers = 1; }
+
+message Data { uint32 seq = 1; bytes payload = 2; uint64 offset = 3; }
+message Ack  { uint32 seq = 1; uint64 delivered_offset = 2; }

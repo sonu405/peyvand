@@ -63,6 +63,8 @@ int main(int argc, char** argv) {
         asio::co_spawn(ctx, peer.probeLoop(), asio::detached);
         asio::co_spawn(ctx, peer.heartBeatsLoop(), asio::detached);
         asio::co_spawn(ctx, peer.pexLoop(), asio::detached);
+        asio::co_spawn(ctx, peer.reliableLoop(), asio::detached);  // Stage 2: timeouts/retransmit
+        asio::co_spawn(ctx, peer.chatTestLoop(), asio::detached);  // Stage 2 demo (baad mein hata sakte)
         ctx.run();
     } catch (const std::exception& e) {
         spdlog::critical("fatal: {}", e.what());
